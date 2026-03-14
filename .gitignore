@@ -1,0 +1,8 @@
+*.amxx
+node_modules/
+.compiler/
+.thirdparty/
+dist/
+src/scripting/prefog.sma
+src/scripting/prestrafer.sma
+src/scripting/kz_jump_stats_loc_decompiled.sma
