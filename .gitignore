@@ -3,6 +3,7 @@ node_modules/
 .compiler/
 .thirdparty/
 .vscode/
+.claude/
 dist/
 src/scripting/prefog.sma
 src/scripting/prestrafer.sma

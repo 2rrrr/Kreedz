@@ -148,8 +148,8 @@ public Task_HudList() {
 		specNum = 0;
 		iTime = floatround(kz_get_actual_time(iAlive), floatround_floor);
 		
-		// get top-right hud base spacing
-		FormatCheckpointsHud(szRunData, charsmax(szRunData));
+		// get checks and teleports
+		FormatCheckpointsHud(iAlive, szRunData, charsmax(szRunData));
 
 		// get timer
 		FormatTimerHud(iAlive, szTime, charsmax(szTime));
@@ -162,7 +162,7 @@ public Task_HudList() {
 
 		for (new id = 1; id <= MAX_PLAYERS; ++id) {
 			if (id == iAlive) {
-				formatex(szMsgHud, charsmax(szMsgHud), "%s", szRunData);
+				formatex(szMsgHud, charsmax(szMsgHud), "^t^n^n");
 
 				if (g_UserData[id][ud_showKeys])
 					add(szMsgHud, charsmax(szMsgHud), szMsgKeysList);
@@ -193,6 +193,11 @@ public Task_HudList() {
 			set_hudmessage(100, 100, 100,
 				0.80, 0.15, 0, 0.0, HUD_UPDATE, 0.15, 0.15, CHANNEL_HUD);
 
+			if (kz_get_timer_state(iAlive) == TIMER_PAUSED) {
+				set_hudmessage(255, 0, 0,
+					0.80, 0.15, 0, 0.0, HUD_UPDATE, 0.15, 0.15, CHANNEL_HUD);
+			}
+
 			ShowSyncHudMsg(id, HudSyncObj, szMsgHud);
 		}
 
@@ -203,8 +208,24 @@ public Task_HudList() {
 	shouldUpdateTimer = false;
 }
 
-FormatCheckpointsHud(szMsg[], iLen) {
-	formatex(szMsg, iLen, "^t^n^n");
+FormatCheckpointsHud(id, szMsg[], iLen) {
+	new numChecks = kz_get_cp_num(id);
+	new numTeleports = kz_get_tp_num(id);
+
+	new szWeaponName[32];
+	kz_get_weapon_name(kz_get_min_rank(id), szWeaponName, charsmax(szWeaponName));
+
+	switch (kz_get_timer_state(id)) {
+		case TIMER_DISABLED: {
+			formatex(szMsg, iLen, "^t^n^n");
+		}
+		case TIMER_ENABLED: {
+			formatex(szMsg, iLen, "[%d cp %d gc] | %s^n^n", numChecks, numTeleports, szWeaponName);
+		}
+		case TIMER_PAUSED: {
+			formatex(szMsg, iLen, "[%d cp %d gc] | %s | PAUSED^n^n", numChecks, numTeleports, szWeaponName);
+		}
+	}
 }
 
 FormatTimerHud(id, szMsg[], iLen) {
@@ -270,15 +291,22 @@ stock cmd_ShowStatusText(id) {
 	get_user_aiming(id, iTarget, .dist = 1000);
 
 	if (is_user_alive(iTarget)) {
+		new numChecks = kz_get_cp_num(iTarget);
+		new numTeleports = kz_get_tp_num(iTarget);
+
 		new Float:time = kz_get_actual_time(iTarget);
 
 		switch (kz_get_timer_state(iTarget)) {
 			case TIMER_DISABLED: {
 				formatex(szMsgTimeDead, charsmax(szMsgTimeDead), "^t");
 			}
-			case TIMER_ENABLED, TIMER_PAUSED: {
+			case TIMER_ENABLED: {
 				UTIL_FormatTime(time, szTime, charsmax(szTime), true);
-				formatex(szMsgTimeDead, charsmax(szMsgTimeDead), "| %s", szTime);
+				formatex(szMsgTimeDead, charsmax(szMsgTimeDead), "| %s [%d cp %d gc]", szTime, numChecks, numTeleports);
+			}
+			case TIMER_PAUSED: {
+				UTIL_FormatTime(time, szTime, charsmax(szTime), true);
+				formatex(szMsgTimeDead, charsmax(szMsgTimeDead), "| %s [%d cp %d gc] | PAUSED", szTime, numChecks, numTeleports);
 			}
 		}
 
