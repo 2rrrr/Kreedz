@@ -313,6 +313,11 @@ public MainMenu_Handler(id, menu, item) {
 	g_bMainMenuOpened[id] = false;
 	menu_destroy(menu);
 
+	if (item == MENU_EXIT)
+		return PLUGIN_HANDLED;
+
+	new bool:bReopenMainMenu = true;
+
 	switch(item) {
 		case 0: amxclient_cmd(id, "cp");
 		case 1: amxclient_cmd(id, "tp");
@@ -322,41 +327,33 @@ public MainMenu_Handler(id, menu, item) {
 		case 5: amxclient_cmd(id, "ungocheck");
 		case 6: amxclient_cmd(id, "nc");
 		case 7: amxclient_cmd(id, "ct");
-		case 8: {
-			amxclient_cmd(id, "invis");
-			return PLUGIN_HANDLED;
-		}
+		case 8: amxclient_cmd(id, "invis");
 		case 9: {
 			amxclient_cmd(id, "say", "/ljsmenu");
-			return PLUGIN_HANDLED;
+			bReopenMainMenu = false;
 		}
 		case 10: {
 			amxclient_cmd(id, "settings");
-			return PLUGIN_HANDLED;
+			bReopenMainMenu = false;
 		}
 		case 11: {
 			amxclient_cmd(id, "mute");
-			return PLUGIN_HANDLED;
+			bReopenMainMenu = false;
 		}
-		case 12: {
-			amxclient_cmd(id, "weapons");
-			return PLUGIN_HANDLED;
-		}
+		case 12: amxclient_cmd(id, "weapons");
 		default: return PLUGIN_HANDLED;
 	}
 
-	new iCurrentMenu, iNewMenu;
-	player_menu_info(id, iCurrentMenu, iNewMenu);
+	if (bReopenMainMenu && is_user_connected(id)) {
+		new iCurrentMenu, iNewMenu;
+		player_menu_info(id, iCurrentMenu, iNewMenu);
 
-	if (iNewMenu > -1) {
-		menu_cancel(id);
+		if (iNewMenu > -1) {
+			menu_cancel(id);
+		}
+
+		cmdMainMenu(id);
 	}
-
-	if (is_user_alive(id) && kz_get_timer_state(id) == TIMER_ENABLED) {
-		set_member(id, m_flNextAttack, get_gametime() + 0.001);
-	}
-
-	cmdMainMenu(id);
 
 	return PLUGIN_HANDLED;
 }
