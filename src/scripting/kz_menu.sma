@@ -327,7 +327,10 @@ public MainMenu_Handler(id, menu, item) {
 		case 5: amxclient_cmd(id, "ungocheck");
 		case 6: amxclient_cmd(id, "nc");
 		case 7: amxclient_cmd(id, "ct");
-		case 8: amxclient_cmd(id, "invis");
+		case 8: {
+			amxclient_cmd(id, "invis");
+			bReopenMainMenu = false;
+		}
 		case 9: {
 			amxclient_cmd(id, "say", "/ljsmenu");
 			bReopenMainMenu = false;
@@ -336,10 +339,7 @@ public MainMenu_Handler(id, menu, item) {
 			amxclient_cmd(id, "settings");
 			bReopenMainMenu = false;
 		}
-		case 11: {
-			amxclient_cmd(id, "mute");
-			bReopenMainMenu = false;
-		}
+		case 11: amxclient_cmd(id, "mute");
 		case 12: amxclient_cmd(id, "weapons");
 		default: return PLUGIN_HANDLED;
 	}
