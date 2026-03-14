@@ -33,7 +33,7 @@ public plugin_init() {
     }
 }
 
-new Float:g_oldNextAttack;
+new Float:g_oldNextAttack[33];
 
 public PlayerPostThinkPre(player) {
     EnableHamForward(g_PlayerIsAlivePost);
@@ -52,8 +52,8 @@ public PlayerIsAlivePost(player) {
         EnableHamForward(g_TankUse);
     } else {
         if (get_pdata_cbase(player, 373) == -1 || (get_pdata_int(player, 2043/4) & 0xFF000000) == 0 || get_pdata_int(get_pdata_cbase(player, 373), 216/4, 4) == 0 || (pev(player, pev_button) & IN_ATTACK2) == 0) {
-            g_oldNextAttack = get_pdata_float(player, 83);
-            if (g_oldNextAttack > 0.0) {
+            g_oldNextAttack[player] = get_pdata_float(player, 83);
+            if (g_oldNextAttack[player] > 0.0) {
                 set_pdata_float(player, 83, 0.0);
                 EnableHamForward(g_PlayerImpulseCommands);
                 EnableHamForward(g_PlayerImpulseCommandsPost);
@@ -67,8 +67,8 @@ public TankUse(ent, caller, useType) {
 
     if (useType == 0) {
         if (get_pdata_cbase(caller, 373) == -1 || (get_pdata_int(caller, 2043/4) & 0xFF000000) == 0 || get_pdata_int(get_pdata_cbase(caller, 373), 216/4, 4) == 0 || (pev(caller, pev_button) & IN_ATTACK2) == 0) {
-            g_oldNextAttack = get_pdata_float(caller, 83);
-            if (g_oldNextAttack > 0.0) {
+            g_oldNextAttack[caller] = get_pdata_float(caller, 83);
+            if (g_oldNextAttack[caller] > 0.0) {
                 set_pdata_float(caller, 83, 0.0);
                 EnableHamForward(g_PlayerImpulseCommands);
                 EnableHamForward(g_PlayerImpulseCommandsPost);
@@ -77,33 +77,34 @@ public TankUse(ent, caller, useType) {
     }
 }
 
-new g_oldImpulse;
+new g_oldImpulse[33];
 
 public PlayerImpulseCommands(player) {
     DisableHamForward(g_PlayerImpulseCommands);
 
-    g_oldImpulse = pev(player, pev_impulse);
+    g_oldImpulse[player] = pev(player, pev_impulse);
     set_pev(player, pev_impulse, 0);
 }
 
-new bool:g_doActions = false;
+new bool:g_doActions[33];
 
 public PlayerImpulseCommandsPost(player) {
     DisableHamForward(g_PlayerImpulseCommandsPost);
 
-    set_pdata_float(player, 83, floatmax(get_pdata_float(player, 83), g_oldNextAttack));
+    set_pdata_float(player, 83, floatmax(get_pdata_float(player, 83), g_oldNextAttack[player]));
     if (get_pdata_cbase(player, 373) != -1) {
-        g_doActions = true;
+        g_doActions[player] = true;
     }
-    set_pev(player, pev_impulse, g_oldImpulse);
+    set_pev(player, pev_impulse, g_oldImpulse[player]);
 }
 
 public ItemPostFrame(ent) {
-    if (!g_doActions) {
+    new player = get_pdata_cbase(ent, 41, 4);
+    if (player < 1 || player > 32 || !g_doActions[player]) {
         return HAM_IGNORED;
     }
 
-    g_doActions = false;
+    g_doActions[player] = false;
     return HAM_SUPERCEDE;
 }
 
