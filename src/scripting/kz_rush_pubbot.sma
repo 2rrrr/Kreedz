@@ -18,7 +18,7 @@
 //#define BOT_USE
 
 // by default bot has no prefix, but you can use "[REC] " for example
-#define BOT_PREFIX ""
+#define BOT_PREFIX "[SR] "
 
 #define DELAY_FRAMES 100
 new g_iDelayCounter;
@@ -1049,7 +1049,7 @@ initCvars() {
 	// 	Enable recording for nub runs
 	// 	0 - disabled (default)
 	// 	1 - enabled
-	bind_pcvar_num(create_cvar("kz_enable_nub_bot", "0"), g_Cvars[cvarEnableNubBot]);
+	bind_pcvar_num(create_cvar("kz_enable_nub_bot", "1"), g_Cvars[cvarEnableNubBot]);
 }
 
 public fmAddToFullPack(es_handle, e, ent, host, hostflags, player, pSet)

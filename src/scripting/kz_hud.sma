@@ -23,7 +23,6 @@ enum _:UserDataStruct {
 	bool:ud_showKeys,
 	bool:ud_showKeysSpec,
 	bool:ud_showSpecList,
-	bool:ud_hideAdminInSpecList,
 };
 
 new g_UserData[MAX_PLAYERS + 1][UserDataStruct];
@@ -43,7 +42,6 @@ public plugin_init() {
 	RegisterHookChain(RG_CBasePlayer_PostThink, "Hook_PostThink");
 
 	kz_register_cmd("speclist", 	"cmd_Speclist");
-	kz_register_cmd("spechide", 	"cmd_SpecHide");
 	kz_register_cmd("showkeys", 	"cmd_ShowKeys");
 	kz_register_cmd("showkeysspec", "cmd_ShowKeysSpec");
 
@@ -70,25 +68,11 @@ public client_putinserver(id) {
 	g_UserData[id][ud_showKeys] = false;
 	g_UserData[id][ud_showKeysSpec] = true;
 	g_UserData[id][ud_showSpecList] = true;
-
-	if (get_user_flags(id) & ADMIN_KICK) {
-		g_UserData[id][ud_hideAdminInSpecList] = true;
-	} else {
-		g_UserData[id][ud_hideAdminInSpecList] = false;
-	}
 }
 
 public cmd_Speclist(id)
 {
 	g_UserData[id][ud_showSpecList] = !g_UserData[id][ud_showSpecList];
-
-	return PLUGIN_HANDLED;
-}
-public cmd_SpecHide(id)
-{
-	if (get_user_flags(id) & ADMIN_KICK) {
-		g_UserData[id][ud_hideAdminInSpecList] = !g_UserData[id][ud_hideAdminInSpecList];
-	}
 
 	return PLUGIN_HANDLED;
 }
@@ -272,9 +256,6 @@ FormatSpecList(id, szSpecList[], iLen, &specNum) {
 
 	for (new iSpec = 1; iSpec <= MAX_PLAYERS; ++iSpec) {
 		if (!is_user_spectating(id, iSpec))
-			continue;
-
-		if (g_UserData[iSpec][ud_hideAdminInSpecList])
 			continue;
 
 		get_user_name(iSpec, szName, charsmax(szName));
