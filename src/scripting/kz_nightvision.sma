@@ -58,12 +58,12 @@ public cmd_Nightvision(id) {
 	if (g_UserData[id][ud_NVGMode] == 1) {
 		message_begin(MSG_ONE_UNRELIABLE, SVC_LIGHTSTYLE, _, id);
 		write_byte(0);
-		write_string("#");
+		write_string("z");
 		message_end();
 	} else if (g_UserData[id][ud_NVGMode] == 2) {
 		message_begin(MSG_ONE_UNRELIABLE, SVC_LIGHTSTYLE, _, id);
 		write_byte(0);
-		write_string("z");
+		write_string("#");
 		message_end();
 	} else {
 		message_begin(MSG_ONE_UNRELIABLE, SVC_LIGHTSTYLE, _, id);

@@ -56,9 +56,6 @@ new g_szBotFile[128];
 new g_iFrameCounter;
 new g_iFinishFrame;
 
-new g_iPlrSound;
-new g_iStepLeft;
-new bool:g_bOldJump;
 
 new Float:g_flInitTime[33];
 new g_iFramesAfterInit[33];
@@ -84,10 +81,6 @@ new g_Cvars[CvarsEnum];
 
 public plugin_precache()
 {
-	precache_sound("player/pl_step1.wav");
-	precache_sound("player/pl_step3.wav");
-	precache_sound("player/pl_step2.wav");
-	precache_sound("player/pl_step4.wav");
 }
 
 public plugin_init()
@@ -128,10 +121,6 @@ public plugin_init()
 	g_aBytes = ArrayCreate(1);
 
 	g_iBotID = 0;
-
-	g_iPlrSound = 0;
-	g_iStepLeft = 0;
-	g_bOldJump = false;
 
 	g_bBotSpeeded = false;
 	g_bBotPaused = false;
@@ -439,20 +428,20 @@ public fwPubFinished(id, Float:flTime, cpCount, tpCount) // when user finished t
 	new name[32];
 	get_user_name(id, name, charsmax(name));
 	trim(name);
-	replace_all(name, charsmax(name), "\", ""); 
-	replace_all(name, charsmax(name), "/", ""); 
-	replace_all(name, charsmax(name), "%", "");
-	replace_all(name, charsmax(name), "&", "");
-	replace_all(name, charsmax(name), "?", "");
-	replace_all(name, charsmax(name), "^"", ""); 
-	replace_all(name, charsmax(name), "'", "");
-	replace_all(name, charsmax(name), " ", "_");  
-	replace_all(name, charsmax(name), ",", "");
-	replace_all(name, charsmax(name), "|", "_");
-	replace_all(name, charsmax(name), ":", "");	
-	replace_all(name, charsmax(name), "*", "");	
-	replace_all(name, charsmax(name), "<", "");	
-	replace_all(name, charsmax(name), ">", "");
+	replace_all(name, charsmax(name), "\\", "{BSL}");
+	replace_all(name, charsmax(name), "/", "{FSL}");
+	replace_all(name, charsmax(name), "%", "{PCT}");
+	replace_all(name, charsmax(name), "&", "{AMP}");
+	replace_all(name, charsmax(name), "?", "{QST}");
+	replace_all(name, charsmax(name), "^"", "{DQT}");
+	replace_all(name, charsmax(name), "'", "{SQT}");
+	replace_all(name, charsmax(name), " ", "_");
+	replace_all(name, charsmax(name), ",", "{COM}");
+	replace_all(name, charsmax(name), "|", "{BAR}");
+	replace_all(name, charsmax(name), ":", "{COL}");
+	replace_all(name, charsmax(name), "*", "{AST}");
+	replace_all(name, charsmax(name), "<", "{LT}");
+	replace_all(name, charsmax(name), ">", "{GT}");
 
 	if (tpCount > 0) {
 		format(name, charsmax(name), "[%dcp %dgc] %s", cpCount, tpCount, name);
@@ -485,10 +474,6 @@ public kickBot()
 	server_cmd("kick #%d", get_user_userid(g_iBotID));	
 
 	g_iBotID = 0;
-
-	g_iPlrSound = 0;
-	g_iStepLeft = 0;
-	g_bOldJump = false;
 
 	g_bBotSpeeded = false;
 	g_bBotPaused = false;
@@ -706,6 +691,19 @@ public parseFilename()
 	{
 		copy(g_szBotName, charsmax(g_szBotName), szTemp[1]);
 		replace_all(g_szBotName, charsmax(g_szBotName), "_", " ");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{BSL}", "\\");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{FSL}", "/");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{PCT}", "%");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{AMP}", "&");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{QST}", "?");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{DQT}", "^"");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{SQT}", "'");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{COM}", ",");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{BAR}", "|");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{COL}", ":");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{AST}", "*");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{LT}", "<");
+		replace_all(g_szBotName, charsmax(g_szBotName), "{GT}", ">");
 	}
 	else
 	{
@@ -725,6 +723,19 @@ public simpleName()
 	copy(g_szBotName, charsmax(g_szBotName), g_szBotFile);
 	new pos = contain(g_szBotName, ".nav");
 	g_szBotName[pos] = 0;
+	replace_all(g_szBotName, charsmax(g_szBotName), "{BSL}", "\\");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{FSL}", "/");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{PCT}", "%");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{AMP}", "&");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{QST}", "?");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{DQT}", "^"");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{SQT}", "'");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{COM}", ",");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{BAR}", "|");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{COL}", ":");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{AST}", "*");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{LT}", "<");
+	replace_all(g_szBotName, charsmax(g_szBotName), "{GT}", ">");
 }
 
 public fmCheckVisibility(id, pset)
@@ -973,20 +984,6 @@ public botThink(id)
 	}
 
 
-	if(bGround && sqr_speed > 1.5 * 1.5)
-	{			
-		if(bJump && !g_bOldJump)
-		{			
-			g_iPlrSound = 0;
-		}
-
-		playbackSound(id);
-	}
-
-	g_iPlrSound -= 10;
-
-	g_bOldJump = bJump;
-
 	if(g_iDelayCounter == 0 && (g_iFrameCounter == 0 || g_iFrameCounter == g_iFinishFrame - 1))
 	{
 		g_iDelayCounter++;
@@ -1019,29 +1016,6 @@ public botThink(id)
 			g_iFrameCounter = 0;
 	}
 
-	return;
-}
-
-public playbackSound(id)
-{
-	if(g_iPlrSound > 0)
-		return;
-	
-	g_iStepLeft = !g_iStepLeft;
-	new irand = random_num(0, 1) + (g_iStepLeft * 2);
-
-	g_iPlrSound = 300;
-	
-	switch(irand)
-	{
-		// right foot
-		case 0:	emit_sound(id, CHAN_BODY, "player/pl_step1.wav", VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
-		case 1:	emit_sound(id, CHAN_BODY, "player/pl_step3.wav", VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
-		// left foot
-		case 2:	emit_sound(id, CHAN_BODY, "player/pl_step2.wav", VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
-		case 3:	emit_sound(id, CHAN_BODY, "player/pl_step4.wav", VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
-	}
-	
 	return;
 }
 
