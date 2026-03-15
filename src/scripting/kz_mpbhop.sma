@@ -51,6 +51,10 @@ enum _:BlocksClasses
 	TRIGGER_MULTIPLE
 }
 
+#if !defined DMG_BULLET
+	#define DMG_BULLET (1<<1)
+#endif
+
 new const Float:VEC_DUCK_HULL_MIN[3]	= {-16.0, -16.0, -18.0 };
 new const Float:VEC_DUCK_HULL_MAX[3]	= { 16.0,  16.0,  32.0 };
 new const Float:VEC_DUCK_VIEW[3]		= {  0.0,   0.0,  12.0 };
@@ -81,6 +85,10 @@ new bool:g_bSafeInform = true;
 new g_iFhAddToFullPack;
 new g_iAdminDoor[PLAYERS_ARRAY_SIZE];
 new szConfigFile[64];
+
+new HamHook:g_iHhBlockTraceAttack[BlocksClasses];
+new g_iHudSyncBhopBlockInfo;
+new Float:g_flNextBlockHud[PLAYERS_ARRAY_SIZE];
 
 new Trie:g_iBlocksClass;
 
@@ -113,6 +121,7 @@ public plugin_init()
 
 	g_iMaxPlayers = get_maxplayers();
 	g_iMaxEnts = global_get(glb_maxEntities);
+	g_iHudSyncBhopBlockInfo = CreateHudSyncObj();
 
 	new iCount;
 
@@ -125,6 +134,7 @@ public plugin_init()
 	server_print("[MPBHOP] %d bhop blocks detected", iCount);
 
 	SetTriggerMultiple();
+	RegisterBlockTraceAttackHooks();
 }
 
 public plugin_cfg()
@@ -253,6 +263,7 @@ public client_putinserver(id)
 	}
 	ClearIdBits(g_bOnGround, id);
 	ClearIdBits(g_bTeleported, id);
+	g_flNextBlockHud[id] = 0.0;
 }
 
 public client_disconnected(id)
@@ -260,6 +271,7 @@ public client_disconnected(id)
 	ClearIdBits(g_bAdmin, id);
 	ClearIdBits(g_bOnGround, id);
 	ClearIdBits(g_bTeleported, id);
+	g_flNextBlockHud[id] = 0.0;
 }
 
 public ClCmd_ShowBlocks(id, level, cid)
@@ -782,6 +794,57 @@ SetTouch(bool:bActive)
 			}
 		}
 	}
+}
+
+RegisterBlockTraceAttackHooks()
+{
+	static const szBlockClasses[BlocksClasses][] = {
+		"func_door",
+		"func_wall_toggle",
+		"func_button",
+		"trigger_multiple"
+	};
+
+	for(new i; i<sizeof(g_iHhBlockTraceAttack); i++)
+	{
+		if( g_bitPresentClass & (1<<i) )
+		{
+			if( !g_iHhBlockTraceAttack[i] )
+			{
+				g_iHhBlockTraceAttack[i] = RegisterHam(Ham_TraceAttack, szBlockClasses[i], "TraceAttack_Block");
+			}
+		}
+	}
+}
+
+public TraceAttack_Block(iEnt, iAttacker, Float:flDamage, Float:vecDir[3], iTrace, iDamageBits)
+{
+	#pragma unused flDamage, vecDir, iTrace
+
+	if( !IsPlayer(iAttacker) || !is_user_alive(iAttacker) )
+	{
+		return HAM_IGNORED;
+	}
+
+	if( (iDamageBits & DMG_BULLET) == 0 || GetEntBits(g_bBlocks, iEnt) == 0 )
+	{
+		return HAM_IGNORED;
+	}
+
+	static szClassName[32];
+	pev(iEnt, pev_classname, szClassName, charsmax(szClassName));
+
+	new Float:flNow = get_gametime();
+	if( flNow < g_flNextBlockHud[iAttacker] )
+	{
+		return HAM_IGNORED;
+	}
+	g_flNextBlockHud[iAttacker] = flNow + 0.08;
+
+	set_hudmessage(180, 180, 180, -1.0, 0.86, 0, 0.0, 0.9, 0.0, 0.0, -1);
+	ShowSyncHudMsg(iAttacker, g_iHudSyncBhopBlockInfo, "This is a bhop block: %s, id: %d", szClassName, iEnt);
+
+	return HAM_IGNORED;
 }
 
 SetBlocksByFile()

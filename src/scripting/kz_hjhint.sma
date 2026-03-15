@@ -18,7 +18,7 @@
 
 new g_spriteLaser;
 
-new bool:g_bKzHint[MAX_PLAYERS + 1], bool:g_bKzDebug[MAX_PLAYERS + 1], bool:g_bHintVisible[MAX_PLAYERS + 1];
+new bool:g_bHjHint[MAX_PLAYERS + 1], bool:g_bHjDebug[MAX_PLAYERS + 1], bool:g_bHintVisible[MAX_PLAYERS + 1];
 new Float:g_vecHintStart[MAX_PLAYERS + 1][3], Float:g_vecHintEnd[MAX_PLAYERS + 1][3];
 new g_iHintR[MAX_PLAYERS + 1], g_iHintG[MAX_PLAYERS + 1];
 
@@ -32,16 +32,16 @@ public plugin_init()
 {
     register_plugin("KZ Highjump Hint", VERSION, "Gemini");
 
-    register_clcmd("say /kzhint", "cmd_ToggleKzHint");
-    register_clcmd("say /kzdebug", "cmd_ToggleKzDebug");
+    register_clcmd("say /hjhint", "cmd_ToggleHjHint");
+    register_clcmd("say /hjdebug", "cmd_ToggleHjDebug");
 
     // ReAPI PostThink provides smoother scheduling than set_task when server FPS is high.
     RegisterHookChain(RG_CBasePlayer_PostThink, "Hook_PostThink");
 
     g_pCvarDrawInterval = register_cvar("kz_hjh_draw_interval", "0.01");
     g_pCvarRecalcInterval = register_cvar("kz_hjh_recalc_interval", "0.01");
-    g_pCvarRecalcMove = register_cvar("kz_hjh_recalc_move", "4.0");
-    g_pCvarRecalcYaw = register_cvar("kz_hjh_recalc_yaw", "2.0");
+    g_pCvarRecalcMove = register_cvar("kz_hjh_recalc_move", "2.0");
+    g_pCvarRecalcYaw = register_cvar("kz_hjh_recalc_yaw", "1.0");
     g_pCvarProximity = register_cvar("kz_hjh_proximity", "120.0");
     g_pCvarThreshold = register_cvar("kz_hjh_threshold", "70.0");
     g_pCvarStepLen = register_cvar("kz_hjh_step_len", "1.0");
@@ -52,53 +52,70 @@ public plugin_precache()
     g_spriteLaser = precache_model("sprites/zbeam4.spr");
 }
 
-public client_putinserver(id)
+stock ResetPlayerHintState(id, bool:enabled)
 {
-    g_bKzHint[id] = true;
-    g_bKzDebug[id] = false;
+    g_bHjHint[id] = enabled;
+    g_bHjDebug[id] = false;
     g_bHintVisible[id] = false;
 
     g_fNextDraw[id] = 0.0;
     g_fNextRecalc[id] = 0.0;
     g_fNextDebugPrint[id] = 0.0;
+}
+
+
+stock bool:IsPlayerOnFuncDoor(id)
+{
+    new groundEnt = get_entvar(id, var_groundentity);
+    if (groundEnt <= 0 || !pev_valid(groundEnt)) {
+        return false;
+    }
+
+    new classname[32];
+    pev(groundEnt, pev_classname, classname, charsmax(classname));
+    return equal(classname, "func_door") || equal(classname, "func_door_rotating");
+}
+
+public client_putinserver(id)
+{
+    ResetPlayerHintState(id, true);
 }
 
 public client_disconnected(id)
 {
-    g_bKzHint[id] = false;
-    g_bKzDebug[id] = false;
-    g_bHintVisible[id] = false;
-
-    g_fNextDraw[id] = 0.0;
-    g_fNextRecalc[id] = 0.0;
-    g_fNextDebugPrint[id] = 0.0;
+    ResetPlayerHintState(id, false);
 }
 
-public cmd_ToggleKzHint(id)
+public cmd_ToggleHjHint(id)
 {
-    g_bKzHint[id] = !g_bKzHint[id];
-    if (!g_bKzHint[id]) {
+    g_bHjHint[id] = !g_bHjHint[id];
+    if (!g_bHjHint[id]) {
         g_bHintVisible[id] = false;
     }
-    client_print(id, print_chat, "[AMXX] KZ Edge Hint is now %s.", g_bKzHint[id] ? "ON" : "OFF");
+    client_print(id, print_chat, "[AMXX] HJ Hint is now %s.", g_bHjHint[id] ? "ON" : "OFF");
     return PLUGIN_HANDLED;
 }
 
-public cmd_ToggleKzDebug(id)
+public cmd_ToggleHjDebug(id)
 {
-    g_bKzDebug[id] = !g_bKzDebug[id];
+    g_bHjDebug[id] = !g_bHjDebug[id];
     g_fNextDebugPrint[id] = 0.0;
-    client_print(id, print_chat, "[AMXX] KZ Debug is now %s.", g_bKzDebug[id] ? "ON" : "OFF");
+    client_print(id, print_chat, "[AMXX] HJ Debug is now %s.", g_bHjDebug[id] ? "ON" : "OFF");
     return PLUGIN_HANDLED;
 }
 
 public Hook_PostThink(id)
 {
-    if (!is_user_alive(id) || !g_bKzHint[id]) {
+    if (!is_user_alive(id) || !g_bHjHint[id]) {
         return;
     }
 
     if (!(get_entvar(id, var_flags) & FL_ONGROUND)) {
+        g_bHintVisible[id] = false;
+        return;
+    }
+
+    if (IsPlayerOnFuncDoor(id)) {
         g_bHintVisible[id] = false;
         return;
     }
@@ -161,9 +178,9 @@ stock Float:FloatAngleDelta(Float:a, Float:b)
     return floatabs(d);
 }
 
-stock KzDebugDrawLine(id, const Float:vStart[3], const Float:vEnd[3], r, g, b, life, width)
+stock HjDebugDrawLine(id, const Float:vStart[3], const Float:vEnd[3], r, g, b, life, width)
 {
-    if (!g_bKzDebug[id]) return;
+    if (!g_bHjDebug[id]) return;
 
     message_begin(MSG_ONE_UNRELIABLE, SVC_TEMPENTITY, _, id);
     write_byte(TE_BEAMPOINTS);
@@ -187,21 +204,21 @@ stock KzDebugDrawLine(id, const Float:vStart[3], const Float:vEnd[3], r, g, b, l
     message_end();
 }
 
-stock KzDebugDrawPoint(id, const Float:vPos[3], r, g, b)
+stock HjDebugDrawPoint(id, const Float:vPos[3], r, g, b)
 {
-    if (!g_bKzDebug[id]) return;
+    if (!g_bHjDebug[id]) return;
 
     new Float:vStart[3], Float:vEnd[3];
     xs_vec_copy(vPos, vStart);
     xs_vec_copy(vPos, vEnd);
     vStart[2] -= 2.0;
     vEnd[2] += 2.0;
-    KzDebugDrawLine(id, vStart, vEnd, r, g, b, 2, 3);
+    HjDebugDrawLine(id, vStart, vEnd, r, g, b, 2, 3);
 }
 
-stock KzDebugMsg(id, const fmt[], any:...)
+stock HjDebugMsg(id, const fmt[], any:...)
 {
-    if (!g_bKzDebug[id]) return;
+    if (!g_bHjDebug[id]) return;
 
     new Float:now = get_gametime();
     if (now < g_fNextDebugPrint[id]) return;
@@ -306,14 +323,14 @@ stock bool:ComputeHint(id, const Float:vOrigin[3], Float:fYaw, Float:vBeamStart[
     engfunc(EngFunc_TraceLine, vGroundStart, vGroundEnd, IGNORE_MONSTERS, id, tr);
     get_tr2(tr, TR_flFraction, fraction);
     if (fraction >= 1.0) {
-        KzDebugMsg(id, "no_ground frac=%.2f", fraction);
+        HjDebugMsg(id, "no_ground frac=%.2f", fraction);
         free_tr2(tr);
         return false;
     }
 
     get_tr2(tr, TR_vecPlaneNormal, vGroundNormal);
     if (vGroundNormal[2] < 0.2) {
-        KzDebugMsg(id, "reject_ground normal_z=%.2f", vGroundNormal[2]);
+        HjDebugMsg(id, "reject_ground normal_z=%.2f", vGroundNormal[2]);
         free_tr2(tr);
         return false;
     }
@@ -324,7 +341,7 @@ stock bool:ComputeHint(id, const Float:vOrigin[3], Float:fYaw, Float:vBeamStart[
     xs_vec_mul_scalar(vGroundNormal, xs_vec_dot(vViewDir, vGroundNormal), vNormPart);
     xs_vec_sub(vViewDir, vNormPart, vStepDir);
     if (xs_vec_len(vStepDir) < 0.01) {
-        KzDebugMsg(id, "reject_stepdir len<0.01");
+        HjDebugMsg(id, "reject_stepdir len<0.01");
         free_tr2(tr);
         return false;
     }
@@ -338,12 +355,12 @@ stock bool:ComputeHint(id, const Float:vOrigin[3], Float:fYaw, Float:vBeamStart[
         xs_vec_normalize(vUphillDir, vUphillDir);
     }
 
-    if (g_bKzDebug[id]) {
+    if (g_bHjDebug[id]) {
         new Float:vDbgEnd[3], Float:vTmp[3];
-        KzDebugDrawPoint(id, vGroundPoint, 0, 255, 255);
+        HjDebugDrawPoint(id, vGroundPoint, 0, 255, 255);
         xs_vec_mul_scalar(vStepDir, 16.0, vTmp);
         xs_vec_add(vGroundPoint, vTmp, vDbgEnd);
-        KzDebugDrawLine(id, vGroundPoint, vDbgEnd, 255, 255, 0, 2, 2);
+        HjDebugDrawLine(id, vGroundPoint, vDbgEnd, 255, 255, 0, 2, 2);
     }
 
     new bool:bFoundEdge = false, bool:bPlaneBoundary = false, bool:bSuppressUphillBoundary = false;
@@ -509,13 +526,13 @@ stock bool:ComputeHint(id, const Float:vOrigin[3], Float:fYaw, Float:vBeamStart[
     }
 
     if (bSuppressUphillBoundary) {
-        KzDebugMsg(id, "suppress_uphill_boundary");
+        HjDebugMsg(id, "suppress_uphill_boundary");
         free_tr2(tr);
         return false;
     }
 
     if (!bFoundEdge || get_distance_f(vGroundPoint, vEdgePoint) > fProximity) {
-        if (!bFoundEdge) KzDebugMsg(id, "no_edge within %.0f", fProximity);
+        if (!bFoundEdge) HjDebugMsg(id, "no_edge within %.0f", fProximity);
         free_tr2(tr);
         return false;
     }
@@ -553,7 +570,7 @@ stock bool:ComputeHint(id, const Float:vOrigin[3], Float:fYaw, Float:vBeamStart[
     }
 
     if (!bReliableParallel) {
-        KzDebugMsg(id, "suppress_unreliable_parallel type=%d wall=%d", bPlaneBoundary, bGotWallNormal);
+        HjDebugMsg(id, "suppress_unreliable_parallel type=%d wall=%d", bPlaneBoundary, bGotWallNormal);
         free_tr2(tr);
         return false;
     }
@@ -594,18 +611,18 @@ stock bool:ComputeHint(id, const Float:vOrigin[3], Float:fYaw, Float:vBeamStart[
     }
 
     if (!bGotDrop) {
-        KzDebugMsg(id, "drop_miss both_sides");
+        HjDebugMsg(id, "drop_miss both_sides");
         free_tr2(tr);
         return false;
     }
 
     if (!bPlaneBoundary && fDropDist <= 0.5) {
-        KzDebugMsg(id, "tiny_drop=%.2f reject", fDropDist);
+        HjDebugMsg(id, "tiny_drop=%.2f reject", fDropDist);
         free_tr2(tr);
         return false;
     }
     if (!bPlaneBoundary && vPrevNormal[2] < 0.99 && fDropDist < 5.0) {
-        KzDebugMsg(id, "slope_small_drop=%.2f reject", fDropDist);
+        HjDebugMsg(id, "slope_small_drop=%.2f reject", fDropDist);
         free_tr2(tr);
         return false;
     }
@@ -619,14 +636,16 @@ stock bool:ComputeHint(id, const Float:vOrigin[3], Float:fYaw, Float:vBeamStart[
     xs_vec_sub(vBeamCenter, vBeamHalf, vBeamStart);
     xs_vec_add(vBeamCenter, vBeamHalf, vBeamEnd);
 
-    if (g_bKzDebug[id]) {
-        KzDebugDrawPoint(id, vEdgePoint, 255, 200, 0);
-        KzDebugDrawPoint(id, vAirPoint, 255, 80, 80);
-        KzDebugDrawPoint(id, vBeamCenter, 255, 255, 255);
-        KzDebugDrawLine(id, vBeamStart, vBeamEnd, 120, 120, 255, 2, 2);
-        KzDebugMsg(id, "dir par(%.2f %.2f %.2f) n1(%.2f %.2f %.2f) n2(%.2f %.2f %.2f) type=%d wall=%d drop=%.1f side=%d", vParallel[0], vParallel[1], vParallel[2], vPrevNormal[0], vPrevNormal[1], vPrevNormal[2], vCurrNormal[0], vCurrNormal[1], vCurrNormal[2], bPlaneBoundary, bGotWallNormal, fDropDist, bestSide);
+    if (g_bHjDebug[id]) {
+        HjDebugDrawPoint(id, vEdgePoint, 255, 200, 0);
+        HjDebugDrawPoint(id, vAirPoint, 255, 80, 80);
+        HjDebugDrawPoint(id, vBeamCenter, 255, 255, 255);
+        HjDebugDrawLine(id, vBeamStart, vBeamEnd, 120, 120, 255, 2, 2);
+        HjDebugMsg(id, "dir par(%.2f %.2f %.2f) n1(%.2f %.2f %.2f) n2(%.2f %.2f %.2f) type=%d wall=%d drop=%.1f side=%d", vParallel[0], vParallel[1], vParallel[2], vPrevNormal[0], vPrevNormal[1], vPrevNormal[2], vCurrNormal[0], vCurrNormal[1], vCurrNormal[2], bPlaneBoundary, bGotWallNormal, fDropDist, bestSide);
     }
 
     free_tr2(tr);
     return true;
 }
+
+
