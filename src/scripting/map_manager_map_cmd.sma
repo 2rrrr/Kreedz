@@ -11,12 +11,15 @@
 
 #pragma semicolon 1
 
-const MIN_SEARCH_LENGTH = 4;
+const MIN_SEARCH_LENGTH = 2;
+const MAP_CHANGE_DELAY = 3;
+const TASK_DELAYED_CHANGE = 420510;
 
 new Array:g_aMapsList = Invalid_Array;
 new g_sPrefix[48];
 new g_sCurMap[MAPNAME_LENGTH];
 new g_iMaxPlayers;
+new g_sPendingMap[MAPNAME_LENGTH];
 
 public plugin_init()
 {
@@ -86,13 +89,13 @@ public clcmd_say(id)
 
 handle_map_change_request(id, map_query[])
 {
-    new map_index = mapm_get_map_index(map_query);
-    if(map_index != INVALID_MAP_INDEX) {
-        change_map(id, map_query);
-        return;
-    }
-
     if(strlen(map_query) < MIN_SEARCH_LENGTH) {
+        new exact_index = mapm_get_map_index(map_query);
+        if(exact_index != INVALID_MAP_INDEX || equali(map_query, g_sCurMap)) {
+            change_map(id, map_query);
+            return;
+        }
+
         client_print_color(
             id,
             print_team_default,
@@ -103,26 +106,32 @@ handle_map_change_request(id, map_query[])
         return;
     }
 
-    if(g_aMapsList == Invalid_Array) {
-        client_print_color(id, print_team_default, "%s^1 Map list is not loaded yet.", g_sPrefix);
-        return;
-    }
-
-    new Array:result_list = ArrayCreate(1, 1);
+    new Array:result_list = ArrayCreate(MAPNAME_LENGTH, 1);
     new result_count;
 
-    map_index = 0;
-    while((map_index = find_similar_map(map_index, map_query)) != INVALID_MAP_INDEX) {
-        ArrayPushCell(result_list, map_index);
+    if(containi(g_sCurMap, map_query) != -1) {
+        ArrayPushString(result_list, g_sCurMap);
         result_count++;
-        map_index++;
+    }
+
+    if(g_aMapsList != Invalid_Array) {
+        new map_index = 0;
+        new map_info[MapStruct];
+        while((map_index = find_similar_map(map_index, map_query)) != INVALID_MAP_INDEX) {
+            ArrayGetArray(g_aMapsList, map_index, map_info);
+
+            if(!is_map_in_result_list(result_list, map_info[Map])) {
+                ArrayPushString(result_list, map_info[Map]);
+                result_count++;
+            }
+            map_index++;
+        }
     }
 
     if(result_count == 1) {
-        map_index = ArrayGetCell(result_list, 0);
-        new map_info[MapStruct];
-        ArrayGetArray(g_aMapsList, map_index, map_info);
-        change_map(id, map_info[Map]);
+        new map_name[MAPNAME_LENGTH];
+        ArrayGetString(result_list, 0, map_name, charsmax(map_name));
+        change_map(id, map_name);
     } else if(result_count > 1) {
         show_search_results_menu(id, result_list, result_count);
     } else {
@@ -135,12 +144,11 @@ handle_map_change_request(id, map_query[])
 show_search_results_menu(id, Array:result_list, result_count)
 {
     new menu = menu_create("Select map to change:", "search_results_handler");
-    new map_info[MapStruct], map_index;
+    new map_name[MAPNAME_LENGTH];
 
-    for(new i; i < result_count; i++) {
-        map_index = ArrayGetCell(result_list, i);
-        ArrayGetArray(g_aMapsList, map_index, map_info);
-        menu_additem(menu, map_info[Map]);
+    for(new i = 0; i < result_count; i++) {
+        ArrayGetString(result_list, i, map_name, charsmax(map_name));
+        menu_additem(menu, map_name);
     }
 
     new text[64];
@@ -169,7 +177,7 @@ public search_results_handler(id, menu, item)
         return PLUGIN_HANDLED;
     }
 
-    if(mapm_get_map_index(map_name) == INVALID_MAP_INDEX) {
+    if(mapm_get_map_index(map_name) == INVALID_MAP_INDEX && !equali(map_name, g_sCurMap)) {
         client_print_color(id, print_team_default, "%s^1 Map is no longer available:^3 %s", g_sPrefix, map_name);
         return PLUGIN_HANDLED;
     }
@@ -222,6 +230,18 @@ bool:is_replay_bot(id)
     return bool:is_user_bot(id);
 }
 
+bool:is_map_in_result_list(Array:result_list, map[])
+{
+    new existing_map[MAPNAME_LENGTH];
+    for(new i = 0, size = ArraySize(result_list); i < size; i++) {
+        ArrayGetString(result_list, i, existing_map, charsmax(existing_map));
+        if(equali(existing_map, map)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 find_similar_map(start_index, query[])
 {
     new map_info[MapStruct];
@@ -239,15 +259,33 @@ find_similar_map(start_index, query[])
 
 change_map(id, map[])
 {
-    if(equali(map, g_sCurMap)) {
-        client_print_color(id, print_team_default, "%s^1 Current map is already^3 %s^1.", g_sPrefix, map);
-        return;
-    }
-
     new name[32];
     get_user_name(id, name, charsmax(name));
 
-    client_print_color(0, id, "%s^3 %s^1 changed map to^3 %s^1.", g_sPrefix, name, map);
-    log_amx("%s changed map to %s using /map", name, map);
-    server_cmd("changelevel %s", map);
+    if(task_exists(TASK_DELAYED_CHANGE)) {
+        remove_task(TASK_DELAYED_CHANGE);
+    }
+
+    copy(g_sPendingMap, charsmax(g_sPendingMap), map);
+
+    client_print_color(
+        0,
+        id,
+        "%s^3 %s^1 selected^3 %s^1. Changing map in^3 %d^1 seconds.",
+        g_sPrefix,
+        name,
+        map,
+        MAP_CHANGE_DELAY
+    );
+    log_amx("%s scheduled map change to %s using /map", name, map);
+    set_task(float(MAP_CHANGE_DELAY), "task_delayed_changelevel", TASK_DELAYED_CHANGE);
+}
+
+public task_delayed_changelevel()
+{
+    if(!g_sPendingMap[0]) {
+        return;
+    }
+
+    server_cmd("changelevel %s", g_sPendingMap);
 }
