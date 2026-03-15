@@ -119,8 +119,8 @@ public InitKZRush() {
 	new data[SourceStruct];
 
 	data[ServiceName] = 		"KZ Rush";
-	data[CheckPath] = 			"https://kz-rush.ru/download/map/cs16/";
-	data[DownloadPath] = 		"https://kz-rush.ru/download/map/cs16/";
+	data[CheckPath] = 			"https://cors.bakar.moe/https://kz-rush.ru/download/map/cs16/";
+	data[DownloadPath] = 		"https://cors.bakar.moe/https://kz-rush.ru/download/map/cs16/";
 	data[FileExtension] = 		"";
 	data[IsRequireSSL] = 			true;
 
