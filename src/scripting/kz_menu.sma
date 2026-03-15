@@ -37,8 +37,7 @@ enum _:MapTierStruct {
     eMapSource[16],
     eMapTierSimen[64],
     eMapTierRush[64],
-    eMapType[64],
-    eMapLength[64]
+    eMapTierDisplay[64]
 }
 
 new g_MapTierInfo[MapTierStruct]
@@ -140,7 +139,7 @@ initMapTier() {
 	get_mapname(g_szMapName, charsmax(g_szMapName));
 
 	formatex(szQuery, 511, "\
-SELECT map_source, map_tier_simen, map_tier_rush, map_type, map_length FROM `kz_maps_metadata` WHERE `map_name` = '%s';\
+SELECT map_source, map_tier_simen, map_tier_rush FROM `kz_maps_metadata` WHERE `map_name` = '%s';\
 		", g_szMapName);
 	SQL_ThreadQuery(SQL_Tuple, "@initMapTierHandler", szQuery);
 }
@@ -233,13 +232,11 @@ public cmdMainMenu(id) {
 	formatex(szMsg, charsmax(szMsg), "\
 	    \r#awsl ><  \y%s^n\
 	    \dMap \y%s\w(\d%s\w)^n\
-	    \dTier %s\w(\dsimen\w)\d/%s\w(\drush\w)^n\
-	    \dType %s  \dLength %s^n\
+	    \dTier %s^n^n\
 	    \rKZ Menu\w",
 	    szTime,
 	    g_szMapName, g_MapTierInfo[eMapSource],
-	    g_MapTierInfo[eMapTierSimen], g_MapTierInfo[eMapTierRush],
-	    g_MapTierInfo[eMapType], g_MapTierInfo[eMapLength]);
+	    g_MapTierInfo[eMapTierDisplay]);
 
 	new iMenu = menu_create(szMsg, "MainMenu_Handler");
 
@@ -291,7 +288,10 @@ public cmdMainMenu(id) {
 	formatex(szMsg, charsmax(szMsg), "%L", id, "MAINMENU_MUTE");
 	menu_additem(iMenu, szMsg);
 
-	formatex(szMsg, charsmax(szMsg), "%L", id, "MAINMENU_WEAPONS");
+	formatex(szMsg, charsmax(szMsg), "%L^n", id, "MAINMENU_WEAPONS");
+	menu_additem(iMenu, szMsg);
+
+	formatex(szMsg, charsmax(szMsg), "\rStop Timer");
 	menu_additem(iMenu, szMsg);
 
 	formatex(szMsg, charsmax(szMsg), "%L", id, "BACK");
@@ -341,6 +341,7 @@ public MainMenu_Handler(id, menu, item) {
 		}
 		case 11: amxclient_cmd(id, "mute");
 		case 12: amxclient_cmd(id, "weapons");
+		case 13: amxclient_cmd(id, "stop");
 		default: return PLUGIN_HANDLED;
 	}
 
@@ -372,8 +373,6 @@ public MainMenu_Handler(id, menu, item) {
 		SQL_ReadResult(hQuery, 0, g_MapTierInfo[eMapSource], 15);
 		SQL_ReadResult(hQuery, 1, g_MapTierInfo[eMapTierSimen], 63);
 		SQL_ReadResult(hQuery, 2, g_MapTierInfo[eMapTierRush], 63);
-		SQL_ReadResult(hQuery, 3, g_MapTierInfo[eMapType], 63);
-		SQL_ReadResult(hQuery, 4, g_MapTierInfo[eMapLength], 63);
 	}
 
 	if (equali(g_MapTierInfo[eMapSource], "cr")) {
@@ -384,26 +383,20 @@ public MainMenu_Handler(id, menu, item) {
     	strtoupper(g_MapTierInfo[eMapSource]);
     }
     
-	if (equali(g_MapTierInfo[eMapTierSimen], "Unknown")) {
-    	format(g_MapTierInfo[eMapTierSimen], 63, "\dUnknown");
-    } else {
-    	format(g_MapTierInfo[eMapTierSimen], 63, "\y%s", g_MapTierInfo[eMapTierSimen]);
-    }
-    if (equali(g_MapTierInfo[eMapTierRush], "Unknown")) {
-    	format(g_MapTierInfo[eMapTierRush], 63, "\dUnknown");
-    } else {
-    	format(g_MapTierInfo[eMapTierRush], 63, "\y%s", g_MapTierInfo[eMapTierRush]);
-    }
-    if (equali(g_MapTierInfo[eMapType], "Unknown")) {
-    	format(g_MapTierInfo[eMapType], 63, "\dUnknown");
-    } else {
-    	format(g_MapTierInfo[eMapType], 63, "\y%s", g_MapTierInfo[eMapType]);
-    }
-    if (equali(g_MapTierInfo[eMapLength], "Unknown")) {
-    	format(g_MapTierInfo[eMapLength], 63, "\dUnknown");
-    } else {
-    	format(g_MapTierInfo[eMapLength], 63, "\y%s", g_MapTierInfo[eMapLength]);
-    }
+	new szTierSelected[64];
+	copy(szTierSelected, charsmax(szTierSelected), g_MapTierInfo[eMapTierSimen]);
+	trim(szTierSelected);
+
+	if (!szTierSelected[0] || equali(szTierSelected, "Unknown")) {
+		copy(szTierSelected, charsmax(szTierSelected), g_MapTierInfo[eMapTierRush]);
+		trim(szTierSelected);
+	}
+
+	if (!szTierSelected[0] || equali(szTierSelected, "Unknown")) {
+		format(g_MapTierInfo[eMapTierDisplay], charsmax(g_MapTierInfo[eMapTierDisplay]), "\dUnknown");
+	} else {
+		format(g_MapTierInfo[eMapTierDisplay], charsmax(g_MapTierInfo[eMapTierDisplay]), "\y%s", szTierSelected);
+	}
 
 	SQL_FreeHandle(hQuery);
 	return PLUGIN_HANDLED;

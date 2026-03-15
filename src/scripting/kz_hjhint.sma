@@ -14,7 +14,7 @@
 #define HJ_RECALC_INTERVAL_DEFAULT 0.01
 #define HJ_RECALC_MOVE_DEFAULT 4.0
 #define HJ_RECALC_YAW_DEFAULT 2.0
-#define HJ_STEP_LEN_DEFAULT 2.0
+#define HJ_STEP_LEN_DEFAULT 8.0
 
 new g_spriteLaser;
 
@@ -44,7 +44,7 @@ public plugin_init()
     g_pCvarRecalcYaw = register_cvar("kz_hjh_recalc_yaw", "2.0");
     g_pCvarProximity = register_cvar("kz_hjh_proximity", "120.0");
     g_pCvarThreshold = register_cvar("kz_hjh_threshold", "70.0");
-    g_pCvarStepLen = register_cvar("kz_hjh_step_len", "2.0");
+    g_pCvarStepLen = register_cvar("kz_hjh_step_len", "1.0");
 }
 
 public plugin_precache()
