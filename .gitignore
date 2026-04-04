@@ -8,3 +8,6 @@ src/scripting/prestrafer.sma
 src/scripting/kz_jump_stats_loc_decompiled.sma
 src/scripting/amxxpc32.dll
 src/scripting/kz_map_downloader.sma
+src/scripting/amxxpc
+src/scripting/amxxpc32.so
+src/scripting/compile.sh
