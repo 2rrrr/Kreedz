@@ -562,7 +562,7 @@ find_similar_map(map_index, string[MAPNAME_LENGTH])
 
 query_map_difficulties()
 {
-    if(!g_bSqlReady || g_tMapDifficulties == Invalid_Trie || !LibraryExists("kreedz_sql", LibType_Library)) {
+    if(!g_bSqlReady || g_tMapDifficulties == Invalid_Trie) {
         return;
     }
 
