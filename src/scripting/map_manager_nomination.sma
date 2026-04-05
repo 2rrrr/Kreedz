@@ -2,6 +2,8 @@
 #include <map_manager>
 #include <map_manager_blocklist>
 #include <map_manager_adv_lists>
+#include <sqlx>
+#include <kreedz_sql>
 
 #if AMXX_VERSION_NUM < 183
 #include <colorchat>
@@ -12,6 +14,8 @@
 #define AUTHOR "Mistrick"
 
 #pragma semicolon 1
+
+const DIFFICULTY_LEN = 64;
 
 #define get_num(%0) get_pcvar_num(g_pCvars[%0])
 
@@ -51,6 +55,8 @@ new g_hForwards[Forwards];
 
 new Array:g_aNomList;
 new Array:g_aMapsList;
+new Trie:g_tMapDifficulties = Invalid_Trie;
+new bool:g_bSqlReady;
 new g_hCallbackDisabled;
 new g_iNomMaps[33];
 new g_iLastDenominate[33];
@@ -79,7 +85,15 @@ public plugin_init()
     register_clcmd("say maps", "clcmd_mapslist");
     register_clcmd("say /maps", "clcmd_mapslist");
 
+    g_tMapDifficulties = TrieCreate();
     g_hCallbackDisabled = menu_makecallback("callback_disable_item");
+}
+
+public plugin_end()
+{
+    if(g_tMapDifficulties != Invalid_Trie) {
+        TrieDestroy(g_tMapDifficulties);
+    }
 }
 public plugin_natives()
 {
@@ -100,6 +114,9 @@ public module_filter_handler(const library[], LibType:type)
     if(equal(library, "map_manager_adv_lists")) {
         return PLUGIN_HANDLED;
     }
+    if(equal(library, "kreedz_sql")) {
+        return PLUGIN_HANDLED;
+    }
     return PLUGIN_CONTINUE;
 }
 public native_filter_handler(const native_func[], index, trap)
@@ -114,6 +131,9 @@ public native_filter_handler(const native_func[], index, trap)
         return PLUGIN_HANDLED;
     }
     if(equal(native_func, "mapm_advl_get_list_array")) {
+        return PLUGIN_HANDLED;
+    }
+    if(equal(native_func, "kz_sql_get_tuple")) {
         return PLUGIN_HANDLED;
     }
     return PLUGIN_CONTINUE;
@@ -144,7 +164,26 @@ public mapm_maplist_loaded(Array:maplist)
     }
 
     mapm_get_prefix(g_sPrefix, charsmax(g_sPrefix));
+
+    if(g_bSqlReady) {
+        query_map_difficulties();
+    }
 }
+
+public kz_sql_initialized()
+{
+    g_bSqlReady = true;
+    query_map_difficulties();
+}
+public mapm_maplist_unloaded()
+{
+    g_aMapsList = Invalid_Array;
+
+    if(g_tMapDifficulties != Invalid_Trie) {
+        TrieClear(g_tMapDifficulties);
+    }
+}
+
 public client_disconnected(id)
 {
     if(g_iNomMaps[id]) {
@@ -248,30 +287,29 @@ show_nomlist(id, Array: array, size)
 {
     new text[64]; formatex(text, charsmax(text), "%L", LANG_PLAYER, "MAPM_MENU_FAST_NOM");
     new menu = menu_create(text, "nomlist_handler");
-    new map_info[MapStruct], item_name[MAPNAME_LENGTH + 16], map_index, nom_index, block_count;
-    
-    for(new i, str_num[6]; i < size; i++) {
+    new map_info[MapStruct], item_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16], display_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16], map_index, nom_index, block_count;
+
+    for(new i; i < size; i++) {
         map_index = ArrayGetCell(array, i);
         ArrayGetArray(g_aMapsList, map_index, map_info);
-        
-        num_to_str(map_index, str_num, charsmax(str_num));
+        format_map_menu_item(map_info[Map], display_name, charsmax(display_name));
         nom_index = map_nominated(map_info[Map]);
         block_count = mapm_get_blocked_count(map_info[Map]);
 
         if(block_count) {
-            formatex(item_name, charsmax(item_name), "%s[\r%d\d]", map_info[Map], block_count);
+            formatex(item_name, charsmax(item_name), "%s[\r%d\d]", display_name, block_count);
             menu_additem(menu, item_name, .callback = g_hCallbackDisabled);
         } else if(nom_index != INVALID_MAP_INDEX) {
             new nom_info[NomStruct]; ArrayGetArray(g_aNomList, nom_index, nom_info);
             if(id == nom_info[NomPlayer]) {
-                formatex(item_name, charsmax(item_name), "%s[\y*\w]", map_info[Map]);
+                formatex(item_name, charsmax(item_name), "%s[\y*\w]", display_name);
                 menu_additem(menu, item_name);
             } else {
-                formatex(item_name, charsmax(item_name), "%s[\y*\d]", map_info[Map]);
+                formatex(item_name, charsmax(item_name), "%s[\y*\d]", display_name);
                 menu_additem(menu, item_name, .callback = g_hCallbackDisabled);
             }
         } else {
-            menu_additem(menu, map_info[Map]);
+            menu_additem(menu, display_name);
         }
     }
     
@@ -291,7 +329,7 @@ public nomlist_handler(id, menu, item)
         return PLUGIN_HANDLED;
     }
     
-    new item_info[8], item_name[MAPNAME_LENGTH + 16], access, callback;
+    new item_info[8], item_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16], access, callback;
     menu_item_getinfo(menu, item, access, item_info, charsmax(item_info), item_name, charsmax(item_name), callback);
 
     trim_bracket(item_name);
@@ -299,10 +337,14 @@ public nomlist_handler(id, menu, item)
     
     if(nominated == NOMINATION_REMOVED || get_num(DONT_CLOSE_MENU)) {
         if(nominated == NOMINATION_SUCCESS) {
-            format(item_name, charsmax(item_name), "%s[\y*\w]", item_name);
+            new display_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16];
+            format_map_menu_item(item_name, display_name, charsmax(display_name));
+            format(item_name, charsmax(item_name), "%s[\y*\w]", display_name);
             menu_item_setname(menu, item, item_name);
         } else if(nominated == NOMINATION_REMOVED) {
-            menu_item_setname(menu, item, item_name);
+            new display_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16];
+            format_map_menu_item(item_name, display_name, charsmax(display_name));
+            menu_item_setname(menu, item, display_name);
         }
         menu_display(id, menu);
     } else {
@@ -370,8 +412,8 @@ show_nomination_menu(id, Array:maplist, custom_title[] = "")
         formatex(text, charsmax(text), "%s", custom_title);
     }
     new menu = menu_create(text, "mapslist_handler");
-    
-    new map_info[MapStruct], item_name[MAPNAME_LENGTH + 16], block_count, size = ArraySize(maplist);
+
+    new map_info[MapStruct], item_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16], display_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16], block_count, size = ArraySize(maplist);
     new random_sort = get_num(RANDOM_SORT), Array:array = ArrayCreate(1, 1);
 
     for(new i = 0, index, nom_index; i < size; i++) {
@@ -390,23 +432,24 @@ show_nomination_menu(id, Array:maplist, custom_title[] = "")
             continue;
         }
 
+        format_map_menu_item(map_info[Map], display_name, charsmax(display_name));
         nom_index = map_nominated(map_info[Map]);
         block_count = mapm_get_blocked_count(map_info[Map]);
-        
+
         if(block_count) {
-            formatex(item_name, charsmax(item_name), "%s[\r%d\d]", map_info[Map], block_count);
+            formatex(item_name, charsmax(item_name), "%s[\r%d\d]", display_name, block_count);
             menu_additem(menu, item_name, .callback = g_hCallbackDisabled);
         } else if(nom_index != INVALID_MAP_INDEX) {
             new nom_info[NomStruct]; ArrayGetArray(g_aNomList, nom_index, nom_info);
             if(id == nom_info[NomPlayer]) {
-                formatex(item_name, charsmax(item_name), "%s[\y*\w]", map_info[Map]);
+                formatex(item_name, charsmax(item_name), "%s[\y*\w]", display_name);
                 menu_additem(menu, item_name);
             } else {
-                formatex(item_name, charsmax(item_name), "%s[\y*\d]", map_info[Map]);
+                formatex(item_name, charsmax(item_name), "%s[\y*\d]", display_name);
                 menu_additem(menu, item_name, .callback = g_hCallbackDisabled);
             }
         } else {
-            menu_additem(menu, map_info[Map]);
+            menu_additem(menu, display_name);
         }
     }
 
@@ -437,7 +480,7 @@ public mapslist_handler(id, menu, item)
         return PLUGIN_HANDLED;
     }
     
-    new item_info[8], item_name[MAPNAME_LENGTH + 16], access, callback;
+    new item_info[8], item_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16], access, callback;
     menu_item_getinfo(menu, item, access, item_info, charsmax(item_info), item_name, charsmax(item_name), callback);
     
     trim_bracket(item_name);
@@ -445,10 +488,14 @@ public mapslist_handler(id, menu, item)
     
     if(g_iNomMaps[id] < get_num(MAPS_PER_PLAYER) || get_num(DONT_CLOSE_MENU)) {
         if(nominated == NOMINATION_SUCCESS) {
-            format(item_name, charsmax(item_name), "%s[\y*\w]", item_name);
+            new display_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16];
+            format_map_menu_item(item_name, display_name, charsmax(display_name));
+            format(item_name, charsmax(item_name), "%s[\y*\w]", display_name);
             menu_item_setname(menu, item, item_name);
         } else if(nominated == NOMINATION_REMOVED) {
-            menu_item_setname(menu, item, item_name);
+            new display_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16];
+            format_map_menu_item(item_name, display_name, charsmax(display_name));
+            menu_item_setname(menu, item, display_name);
         }
         menu_display(id, menu, item / 7);
     } else {
@@ -512,6 +559,73 @@ find_similar_map(map_index, string[MAPNAME_LENGTH])
     }
     return INVALID_MAP_INDEX;
 }
+
+query_map_difficulties()
+{
+    if(!g_bSqlReady || g_tMapDifficulties == Invalid_Trie || !LibraryExists("kreedz_sql", LibType_Library)) {
+        return;
+    }
+
+    TrieClear(g_tMapDifficulties);
+    SQL_ThreadQuery(
+        kz_sql_get_tuple(),
+        "@on_map_difficulties_loaded",
+        "SELECT `map_name`, COALESCE(NULLIF(TRIM(`map_tier_simen`), ''), NULLIF(TRIM(`map_tier_rush`), ''), 'Unknown') FROM `kz_maps_metadata`;"
+    );
+}
+
+public @on_map_difficulties_loaded(QueryState, Handle:hQuery, error[], error_code, data[], data_len, Float:query_time)
+{
+    if(QueryState == TQUERY_CONNECT_FAILED || QueryState == TQUERY_QUERY_FAILED) {
+        log_amx("Nomination difficulty query failed [%d]: %s", error_code, error);
+        SQL_FreeHandle(hQuery);
+        return PLUGIN_HANDLED;
+    }
+
+    if(g_tMapDifficulties == Invalid_Trie) {
+        SQL_FreeHandle(hQuery);
+        return PLUGIN_HANDLED;
+    }
+
+    new map_name[MAPNAME_LENGTH], difficulty[DIFFICULTY_LEN];
+    while(SQL_MoreResults(hQuery)) {
+        SQL_ReadResult(hQuery, 0, map_name, charsmax(map_name));
+        SQL_ReadResult(hQuery, 1, difficulty, charsmax(difficulty));
+        normalize_difficulty(difficulty, charsmax(difficulty));
+        TrieSetString(g_tMapDifficulties, map_name, difficulty);
+        SQL_NextRow(hQuery);
+    }
+
+    SQL_FreeHandle(hQuery);
+    return PLUGIN_HANDLED;
+}
+
+format_map_menu_item(const map_name[], item_name[], item_len)
+{
+    new difficulty[DIFFICULTY_LEN];
+    get_map_difficulty(map_name, difficulty, charsmax(difficulty));
+    formatex(item_name, item_len, "%s[\y%s\w]", map_name, difficulty);
+}
+
+get_map_difficulty(const map_name[], difficulty[], difficulty_len)
+{
+    if(g_tMapDifficulties != Invalid_Trie && TrieGetString(g_tMapDifficulties, map_name, difficulty, difficulty_len)) {
+        normalize_difficulty(difficulty, difficulty_len);
+        return;
+    }
+
+    copy(difficulty, difficulty_len, "Unknown");
+}
+
+normalize_difficulty(difficulty[], difficulty_len)
+{
+    trim(difficulty);
+
+    if(!difficulty[0]) {
+        copy(difficulty, difficulty_len, "Unknown");
+    }
+}
+
 remove_maps()
 {
     new nom_info[NomStruct];

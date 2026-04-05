@@ -1,5 +1,7 @@
 #include <amxmodx>
 #include <map_manager>
+#include <sqlx>
+#include <kreedz_sql>
 
 #if AMXX_VERSION_NUM < 183
 #include <colorchat>
@@ -14,8 +16,11 @@
 const MIN_SEARCH_LENGTH = 2;
 const MAP_CHANGE_DELAY = 3;
 const TASK_DELAYED_CHANGE = 420510;
+const DIFFICULTY_LEN = 64;
 
 new Array:g_aMapsList = Invalid_Array;
+new Trie:g_tMapDifficulties = Invalid_Trie;
+new bool:g_bSqlReady;
 new g_sPrefix[48];
 new g_sCurMap[MAPNAME_LENGTH];
 new g_iMaxPlayers;
@@ -29,8 +34,40 @@ public plugin_init()
     register_clcmd("say_team", "clcmd_say");
     register_dictionary("mapmanager.txt");
 
+    g_tMapDifficulties = TrieCreate();
     g_iMaxPlayers = get_maxplayers();
     get_mapname(g_sCurMap, charsmax(g_sCurMap));
+}
+
+public plugin_end()
+{
+    if(g_tMapDifficulties != Invalid_Trie) {
+        TrieDestroy(g_tMapDifficulties);
+    }
+}
+
+public plugin_natives()
+{
+    set_module_filter("module_filter_handler");
+    set_native_filter("native_filter_handler");
+}
+
+public module_filter_handler(const library[], LibType:type)
+{
+    if(equal(library, "kreedz_sql")) {
+        return PLUGIN_HANDLED;
+    }
+
+    return PLUGIN_CONTINUE;
+}
+
+public native_filter_handler(const native_func[], index, trap)
+{
+    if(equal(native_func, "kz_sql_get_tuple")) {
+        return PLUGIN_HANDLED;
+    }
+
+    return PLUGIN_CONTINUE;
 }
 
 public plugin_cfg()
@@ -38,14 +75,28 @@ public plugin_cfg()
     mapm_get_prefix(g_sPrefix, charsmax(g_sPrefix));
 }
 
+public kz_sql_initialized()
+{
+    g_bSqlReady = true;
+    query_map_difficulties();
+}
+
 public mapm_maplist_loaded(Array:maplist, const nextmap[])
 {
     g_aMapsList = maplist;
+
+    if(g_bSqlReady) {
+        query_map_difficulties();
+    }
 }
 
 public mapm_maplist_unloaded()
 {
     g_aMapsList = Invalid_Array;
+
+    if(g_tMapDifficulties != Invalid_Trie) {
+        TrieClear(g_tMapDifficulties);
+    }
 }
 
 public clcmd_say(id)
@@ -144,11 +195,12 @@ handle_map_change_request(id, map_query[])
 show_search_results_menu(id, Array:result_list, result_count)
 {
     new menu = menu_create("Select map to change:", "search_results_handler");
-    new map_name[MAPNAME_LENGTH];
+    new map_name[MAPNAME_LENGTH], item_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16];
 
     for(new i = 0; i < result_count; i++) {
         ArrayGetString(result_list, i, map_name, charsmax(map_name));
-        menu_additem(menu, map_name);
+        format_map_menu_item(map_name, item_name, charsmax(item_name));
+        menu_additem(menu, item_name);
     }
 
     new text[64];
@@ -169,8 +221,10 @@ public search_results_handler(id, menu, item)
         return PLUGIN_HANDLED;
     }
 
-    new map_name[MAPNAME_LENGTH], item_info[4], access, callback;
-    menu_item_getinfo(menu, item, access, item_info, charsmax(item_info), map_name, charsmax(map_name), callback);
+    new map_name[MAPNAME_LENGTH], item_info[4], item_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16], access, callback;
+    menu_item_getinfo(menu, item, access, item_info, charsmax(item_info), item_name, charsmax(item_name), callback);
+    trim_bracket(item_name);
+    copy(map_name, charsmax(map_name), item_name);
     menu_destroy(menu);
 
     if(!can_use_map_cmd(id)) {
@@ -255,6 +309,72 @@ find_similar_map(start_index, query[])
     }
 
     return INVALID_MAP_INDEX;
+}
+
+query_map_difficulties()
+{
+    if(!g_bSqlReady || g_tMapDifficulties == Invalid_Trie || !LibraryExists("kreedz_sql", LibType_Library)) {
+        return;
+    }
+
+    TrieClear(g_tMapDifficulties);
+    SQL_ThreadQuery(
+        kz_sql_get_tuple(),
+        "@on_map_difficulties_loaded",
+        "SELECT `map_name`, COALESCE(NULLIF(TRIM(`map_tier_simen`), ''), NULLIF(TRIM(`map_tier_rush`), ''), 'Unknown') FROM `kz_maps_metadata`;"
+    );
+}
+
+public @on_map_difficulties_loaded(QueryState, Handle:hQuery, error[], error_code, data[], data_len, Float:query_time)
+{
+    if(QueryState == TQUERY_CONNECT_FAILED || QueryState == TQUERY_QUERY_FAILED) {
+        log_amx("Map difficulty query failed [%d]: %s", error_code, error);
+        SQL_FreeHandle(hQuery);
+        return PLUGIN_HANDLED;
+    }
+
+    if(g_tMapDifficulties == Invalid_Trie) {
+        SQL_FreeHandle(hQuery);
+        return PLUGIN_HANDLED;
+    }
+
+    new map_name[MAPNAME_LENGTH], difficulty[DIFFICULTY_LEN];
+    while(SQL_MoreResults(hQuery)) {
+        SQL_ReadResult(hQuery, 0, map_name, charsmax(map_name));
+        SQL_ReadResult(hQuery, 1, difficulty, charsmax(difficulty));
+        normalize_difficulty(difficulty, charsmax(difficulty));
+        TrieSetString(g_tMapDifficulties, map_name, difficulty);
+        SQL_NextRow(hQuery);
+    }
+
+    SQL_FreeHandle(hQuery);
+    return PLUGIN_HANDLED;
+}
+
+format_map_menu_item(const map_name[], item_name[], item_len)
+{
+    new difficulty[DIFFICULTY_LEN];
+    get_map_difficulty(map_name, difficulty, charsmax(difficulty));
+    formatex(item_name, item_len, "%s[\y%s\w]", map_name, difficulty);
+}
+
+get_map_difficulty(const map_name[], difficulty[], difficulty_len)
+{
+    if(g_tMapDifficulties != Invalid_Trie && TrieGetString(g_tMapDifficulties, map_name, difficulty, difficulty_len)) {
+        normalize_difficulty(difficulty, difficulty_len);
+        return;
+    }
+
+    copy(difficulty, difficulty_len, "Unknown");
+}
+
+normalize_difficulty(difficulty[], difficulty_len)
+{
+    trim(difficulty);
+
+    if(!difficulty[0]) {
+        copy(difficulty, difficulty_len, "Unknown");
+    }
 }
 
 change_map(id, map[])
