@@ -1,6 +1,8 @@
 #include <amxmodx>
 #include <map_manager_consts>
 #include <map_manager_stocks>
+#include <sqlx>
+#include <kreedz_sql>
 
 #if AMXX_VERSION_NUM < 183
 #include <colorchat>
@@ -20,6 +22,8 @@ new const FILE_MAPS[] = "maps.ini";
 //-----------------------------------------------------//
 
 #define get_num(%0) get_pcvar_num(g_pCvars[%0])
+
+const DIFFICULTY_LEN = 64;
 
 const NOT_VOTED = -1;
 
@@ -66,6 +70,8 @@ new g_iVoted[33];
 new g_hForwards[Forwards];
 
 new Array:g_aMapsList = Invalid_Array;
+new Trie:g_tMapDifficulties = Invalid_Trie;
+new bool:g_bSqlReady;
 
 new bool:g_bBlockLoad = false;
 new g_iShowType;
@@ -91,6 +97,8 @@ public plugin_init()
     register_plugin(PLUGIN, VERSION + VERSION_HASH, AUTHOR);
 
     register_cvar("mapm_version", VERSION, FCVAR_SERVER | FCVAR_SPONLY);
+
+    g_tMapDifficulties = TrieCreate();
 
     g_pCvars[PREFIX] = register_cvar("mapm_prefix", "^4[MapManager]");
     g_pCvars[VOTELIST_SIZE] = register_cvar("mapm_votelist_size", "5");
@@ -126,6 +134,9 @@ public plugin_natives()
     g_aMapsList = ArrayCreate(MapStruct, 1);
     get_mapname(g_sCurMap, charsmax(g_sCurMap));
 
+    set_module_filter("module_filter_handler");
+    set_native_filter("native_filter_handler");
+
     register_native("mapm_load_maplist", "native_load_maplist");
     register_native("mapm_load_maplist_to_array", "native_load_maplist_to_array");
     register_native("mapm_block_load_maplist", "native_block_load_maplist");
@@ -146,6 +157,31 @@ public plugin_natives()
     register_native("is_vote_started", "native_is_vote_started");
     register_native("is_vote_finished", "native_is_vote_finished");
 }
+public module_filter_handler(const library[], LibType:type)
+{
+    if(equal(library, "kreedz_sql")) {
+        return PLUGIN_HANDLED;
+    }
+
+    return PLUGIN_CONTINUE;
+}
+
+public native_filter_handler(const native_func[], index, trap)
+{
+    if(equal(native_func, "kz_sql_get_tuple")) {
+        return PLUGIN_HANDLED;
+    }
+
+    return PLUGIN_CONTINUE;
+}
+
+public plugin_end()
+{
+    if(g_tMapDifficulties != Invalid_Trie) {
+        TrieDestroy(g_tMapDifficulties);
+    }
+}
+
 public native_load_maplist(plugin, params)
 {
     enum {
@@ -354,10 +390,15 @@ public plugin_cfg()
     get_pcvar_string(g_pCvars[PREFIX], g_sPrefix, charsmax(g_sPrefix));
     replace_color_tag(g_sPrefix, charsmax(g_sPrefix));
 
-    // add forward for change file?
     if(!g_bBlockLoad) {
         load_maplist(g_aMapsList, FILE_MAPS);
     }
+}
+
+public kz_sql_initialized()
+{
+    g_bSqlReady = true;
+    query_map_difficulties();
 }
 load_maplist(Array:array, const file[], bool:silent = false)
 {
@@ -416,6 +457,10 @@ load_maplist(Array:array, const file[], bool:silent = false)
         }
     }
     fclose(f);
+
+    if(array == g_aMapsList && g_bSqlReady) {
+        query_map_difficulties();
+    }
 
     if(!ArraySize(array)) {
         if(!silent) {
@@ -478,6 +523,10 @@ load_from_maps_folder(Array:array) {
         while(next_file(hDir, szMapName, charsmax(szMapName)));
 
         close_dir(hDir);
+    }
+
+    if(array == g_aMapsList && g_bSqlReady) {
+        query_map_difficulties();
     }
 
     SortADTArray(array, Sort_Ascending, Sort_String);
@@ -648,7 +697,7 @@ start_vote()
 }
 public show_votemenu(id)
 {
-    static menu[512];
+    static menu[1024];
     new len, keys, percent, item;
     
     len = formatex(menu, charsmax(menu), "\y%L:^n^n", id, g_iVoted[id] != NOT_VOTED ? "MAPM_MENU_VOTE_RESULTS" : "MAPM_MENU_CHOOSE_MAP");
@@ -660,13 +709,20 @@ public show_votemenu(id)
     keys |= (1 << 1);
     
     for(item = 0; item < g_iVoteItems + g_bCanExtend; item++) {
+        new vote_item_name[MAPNAME_LENGTH + DIFFICULTY_LEN + 16];
         len += formatex(menu[len], charsmax(menu) - len, "%s", (item == g_iVoteItems) ? "^n" : "");
 
+        if(g_iVoteType == VOTE_BY_RTV && item != g_iCurMap) {
+            format_map_vote_item(g_sVoteList[item], vote_item_name, charsmax(vote_item_name));
+        } else {
+            copy(vote_item_name, charsmax(vote_item_name), g_sVoteList[item]);
+        }
+
         if(g_iVoted[id] == NOT_VOTED) {
-            len += formatex(menu[len], charsmax(menu) - len, "\r%d.\w %s", (g_iRandomNums[item] + 1 + g_iOffset == 10 ? 0 : g_iRandomNums[item] + 1 + g_iOffset), g_sVoteList[item]);
+            len += formatex(menu[len], charsmax(menu) - len, "\r%d.\w %s", (g_iRandomNums[item] + 1 + g_iOffset == 10 ? 0 : g_iRandomNums[item] + 1 + g_iOffset), vote_item_name);
             keys |= (1 << (g_iRandomNums[item] + g_iOffset));
         } else {
-            len += formatex(menu[len], charsmax(menu) - len, "%s%s", (g_iRandomNums[item] + g_iOffset == g_iVoted[id]) ? "\r" : "\d", g_sVoteList[item]);
+            len += formatex(menu[len], charsmax(menu) - len, "%s%s", (g_iRandomNums[item] + g_iOffset == g_iVoted[id]) ? "\r" : "\d", vote_item_name);
         }
 
         if(g_iShowPercent == PERCENT_ALWAYS || g_iVoted[id] != NOT_VOTED && g_iShowPercent == PERCENT_AFTER_VOTE) {
@@ -807,4 +863,70 @@ bool:is_map_in_vote(map[])
         }
     }
     return false;
+}
+
+query_map_difficulties()
+{
+    if(!g_bSqlReady || g_tMapDifficulties == Invalid_Trie) {
+        return;
+    }
+
+    TrieClear(g_tMapDifficulties);
+    SQL_ThreadQuery(
+        kz_sql_get_tuple(),
+        "@on_map_difficulties_loaded",
+        "SELECT `map_name`, COALESCE(NULLIF(TRIM(`map_tier_simen`), ''), NULLIF(TRIM(`map_tier_rush`), ''), 'Unknown') FROM `kz_maps_metadata`;"
+    );
+}
+
+public @on_map_difficulties_loaded(QueryState, Handle:hQuery, error[], error_code, data[], data_len, Float:query_time)
+{
+    if(QueryState == TQUERY_CONNECT_FAILED || QueryState == TQUERY_QUERY_FAILED) {
+        log_amx("Vote difficulty query failed [%d]: %s", error_code, error);
+        SQL_FreeHandle(hQuery);
+        return PLUGIN_HANDLED;
+    }
+
+    if(g_tMapDifficulties == Invalid_Trie) {
+        SQL_FreeHandle(hQuery);
+        return PLUGIN_HANDLED;
+    }
+
+    new map_name[MAPNAME_LENGTH], difficulty[DIFFICULTY_LEN];
+    while(SQL_MoreResults(hQuery)) {
+        SQL_ReadResult(hQuery, 0, map_name, charsmax(map_name));
+        SQL_ReadResult(hQuery, 1, difficulty, charsmax(difficulty));
+        normalize_difficulty(difficulty, charsmax(difficulty));
+        TrieSetString(g_tMapDifficulties, map_name, difficulty);
+        SQL_NextRow(hQuery);
+    }
+
+    SQL_FreeHandle(hQuery);
+    return PLUGIN_HANDLED;
+}
+
+format_map_vote_item(const map_name[], item_name[], item_len)
+{
+    new difficulty[DIFFICULTY_LEN];
+    get_map_difficulty(map_name, difficulty, charsmax(difficulty));
+    formatex(item_name, item_len, "%s[\y%s\w]", map_name, difficulty);
+}
+
+get_map_difficulty(const map_name[], difficulty[], difficulty_len)
+{
+    if(g_tMapDifficulties != Invalid_Trie && TrieGetString(g_tMapDifficulties, map_name, difficulty, difficulty_len)) {
+        normalize_difficulty(difficulty, difficulty_len);
+        return;
+    }
+
+    copy(difficulty, difficulty_len, "Unknown");
+}
+
+normalize_difficulty(difficulty[], difficulty_len)
+{
+    trim(difficulty);
+
+    if(!difficulty[0]) {
+        copy(difficulty, difficulty_len, "Unknown");
+    }
 }

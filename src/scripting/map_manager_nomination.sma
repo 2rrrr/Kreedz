@@ -194,9 +194,9 @@ public clcmd_say(id)
 {
     new text[MAPNAME_LENGTH]; read_args(text, charsmax(text));
     remove_quotes(text); trim(text); strtolower(text);
-    
+
     if(is_string_with_space(text)) return PLUGIN_CONTINUE;
-    
+
     new map_index = mapm_get_map_index(text);
 
     if(map_index != INVALID_MAP_INDEX) {
@@ -210,7 +210,7 @@ public clcmd_say(id)
             array_size++;
             map_index++;
         }
-        
+
         if(array_size == 1) {
             map_index = ArrayGetCell(nominate_list, 0);
             new map_info[MapStruct]; ArrayGetArray(g_aMapsList, map_index, map_info);
@@ -218,7 +218,7 @@ public clcmd_say(id)
         } else if(array_size > 1) {
             show_nomlist(id, nominate_list, array_size);
         }
-        
+
         ArrayDestroy(nominate_list);
     }
 

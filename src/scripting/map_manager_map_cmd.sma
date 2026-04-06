@@ -140,13 +140,12 @@ public clcmd_say(id)
 
 handle_map_change_request(id, map_query[])
 {
-    if(strlen(map_query) < MIN_SEARCH_LENGTH) {
-        new exact_index = mapm_get_map_index(map_query);
-        if(exact_index != INVALID_MAP_INDEX || equali(map_query, g_sCurMap)) {
-            change_map(id, map_query);
-            return;
-        }
+    if(equali(map_query, g_sCurMap) || mapm_get_map_index(map_query) != INVALID_MAP_INDEX || is_map_valid(map_query)) {
+        change_map(id, map_query);
+        return;
+    }
 
+    if(strlen(map_query) < MIN_SEARCH_LENGTH) {
         client_print_color(
             id,
             print_team_default,
